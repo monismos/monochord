@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import * as Tone from 'tone';
-import { appStore, useAppState } from '../store';
-import { SCALE_OPTIONS } from '../types';
+import { appStore, setColorTheme, useAppState } from '../store';
+import { COLOR_THEMES, SCALE_OPTIONS, type ColorThemeId } from '../types';
 import { audioEngine } from '../audio/engine';
 import { looper, type LoopEvent } from '../audio/looper';
 import { ENGINE_LABELS, PRESETS } from '../audio/presets';
@@ -29,7 +29,22 @@ function Header() {
   const bars = useAppState((s) => s.loopBars);
   const started = useAppState((s) => s.started);
   const [bpmDraft, setBpmDraft] = useState(String(bpm));
+  const tapTimes = useRef<number[]>([]);
   useEffect(() => setBpmDraft(String(bpm)), [bpm]);
+
+  function tapTempo() {
+    const now = performance.now();
+    const previous = tapTimes.current.at(-1);
+    const taps = previous !== undefined && now - previous > 2000 ? [now] : [...tapTimes.current, now].slice(-5);
+    tapTimes.current = taps;
+    if (taps.length < 2) return;
+    const intervals = taps.slice(1).map((time, index) => time - taps[index]!);
+    const average = intervals.reduce((sum, interval) => sum + interval, 0) / intervals.length;
+    const nextBpm = Math.min(200, Math.max(50, Math.round(60_000 / average)));
+    setBpmDraft(String(nextBpm));
+    appStore.setState({ bpm: nextBpm });
+    looper.setBpm(nextBpm);
+  }
 
   return <header className="topbar">
     <div className="brand-lockup">
@@ -44,9 +59,18 @@ function Header() {
       {layers > 0 && <button className="transport-button clear-button" aria-label="Clear most recent loop layer" onClick={() => looper.clearLastLayer()}>CLEAR LAYER</button>}
       <select className="bar-select" value={bars} onChange={(event) => { const value = Number(event.target.value); appStore.setState({ loopBars: value }); looper.setBars(value); }} aria-label="Loop length">{[1, 2, 4, 8].map((count) => <option key={count} value={count}>{count} {count === 1 ? 'BAR' : 'BARS'}</option>)}</select>
       <label className="bpm-control"><span>BPM</span><input aria-label="Tempo" type="number" min="50" max="200" value={bpmDraft} onChange={(event) => setBpmDraft(event.target.value)} onBlur={() => { const value = Math.min(200, Math.max(50, Number(bpmDraft) || 110)); appStore.setState({ bpm: value }); looper.setBpm(value); }} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }} /></label>
+      <button className="tap-tempo" onClick={tapTempo} title="Tap a steady beat to set the tempo">TAP</button>
     </div>
     <div className="topbar-right"><div className={`latch-pill ${latch ? 'active' : ''}`}><span className="latch-glyph">⌁</span>{latch ? 'LATCH ON' : 'LATCH OFF'}</div><div className="audio-status"><span className={started ? 'status-led live' : 'status-led'} />{started ? 'AUDIO READY' : 'AUDIO SLEEPING'}</div></div>
   </header>;
+}
+
+function ThemePicker({ compact = false }: { compact?: boolean }) {
+  const selectedTheme = useAppState((s) => s.theme);
+  return <div className={`theme-picker ${compact ? 'compact' : ''}`} role="group" aria-label="Color theme">
+    <span className="theme-picker-label">THEME</span>
+    {COLOR_THEMES.map((theme) => <button key={theme.id} className={`theme-swatch ${selectedTheme === theme.id ? 'selected' : ''}`} style={{ '--theme-color': theme.color } as CSSProperties} aria-label={`${theme.label} color theme`} aria-pressed={selectedTheme === theme.id} title={theme.label} onClick={() => setColorTheme(theme.id as ColorThemeId)}><span /></button>)}
+  </div>;
 }
 
 function ScalePanel({ choosePreset }: { choosePreset: (index: number) => void }) {
@@ -106,6 +130,7 @@ function SettingsPanel() {
   const filterHz = useAppState((s) => s.filterHz);
   const reverbSend = useAppState((s) => s.reverbSend);
   const midiEnabled = useAppState((s) => s.midiEnabled);
+  const savedScenes = useAppState((s) => s.savedScenes);
   const choices = useSyncExternalStore(MIDI_SUBSCRIPTION, midi.getChoices, midi.getChoices);
   const selectedMidi = useSyncExternalStore(MIDI_SUBSCRIPTION, midi.getSelected, midi.getSelected);
 
@@ -134,17 +159,35 @@ function SettingsPanel() {
       <div className="setting-row"><div><strong>Web MIDI</strong><small>Send notes + CC</small></div><button className={`toggle ${midiEnabled ? 'on' : ''}`} onClick={toggleMidi} aria-label="Toggle Web MIDI"><span /></button></div>
       {midiEnabled && <select className="midi-select" value={selectedMidi} onChange={(event) => midi.select(event.target.value)} aria-label="MIDI output device">{choices.length ? choices.map((choice) => <option key={choice.id} value={choice.id}>{choice.name}</option>) : <option value="">No MIDI output found</option>}</select>}
       <div className="setting-row tuning-row"><div><strong>Tuning</strong><small>Equal temperament</small></div><span className="fixed-value">12 TET</span></div>
-      <div className="scene-grid-title"><span>SCENE MEMORY</span><span>F RECALL · SHIFT+F SAVE</span></div><div className="scene-grid">{Array.from({ length: 12 }, (_, index) => <button key={index} title={`F${index + 1} recall · Shift+F${index + 1} save`} onClick={(event) => window.dispatchEvent(new CustomEvent('monochord:scene', { detail: { slot: index + 1, save: event.shiftKey } }))}>{String(index + 1).padStart(2, '0')}</button>)}</div>
+      <div className="setting-row theme-setting"><div><strong>Color theme</strong><small>Saved on this device</small></div><ThemePicker compact /></div>
+      <div className="scene-grid-title"><span>SCENE MEMORY</span><span>F RECALL · SHIFT+F SAVE</span></div><div className="scene-grid">{Array.from({ length: 12 }, (_, index) => {
+        const slot = index + 1;
+        const saved = savedScenes.includes(slot);
+        return <button key={slot} className={saved ? 'saved' : ''} aria-label={`Scene ${slot}${saved ? ', saved' : ', empty'}. Click to recall; Shift-click to save`} title={`F${slot} recall · Shift+F${slot} save`} onClick={(event) => window.dispatchEvent(new CustomEvent('monochord:scene', { detail: { slot, save: event.shiftKey } }))}>{String(slot).padStart(2, '0')}</button>;
+      })}</div>
     </section>
   </aside>;
 }
 
 function StartOverlay({ onBegin, error }: { onBegin: () => void; error: string }) {
-  return <div className="start-overlay"><div className="start-card"><div className="start-eyebrow"><span />BROWSER INSTRUMENT · 01</div><div className="start-logo"><span className="logo-mark"><Icon name="wave" /></span><h2>mono<span>chord</span></h2></div><p className="start-description">A musical instrument with two hands.<br />Keys choose the notes. Your mouse gives them life.</p><div className="start-keys"><div><span>NOTE ROWS</span><strong>Q–P · A–; · Z–/</strong></div><div><span>EXPRESSION</span><strong>Mouse position + motion</strong></div><div><span>PERFORMANCE</span><strong>Chord · latch · loop · morph</strong></div></div><button className="begin-button" onClick={onBegin}>BEGIN PLAYING <span>↗</span></button>{error && <div className="start-error">{error}</div>}<div className="start-foot">CLICK TO ENABLE AUDIO <span>·</span> HEADPHONES RECOMMENDED</div></div><div className="start-aside"><div className="aside-stamp">FIELD<br />NOTES<br /><b>001</b></div><div className="aside-lines"><span>DISCRETE INPUT</span><i /><span>CONTINUOUS EXPRESSION</span><i /><span>ONE SHARED VOICE</span></div></div></div>;
+  return <div className="start-overlay">
+    <div className="start-card">
+      <div className="start-meta"><span className="creator-byline">Made by David Sam Sundhar P</span><ThemePicker compact /></div>
+      <div className="start-eyebrow"><span />BROWSER INSTRUMENT · 01</div>
+      <div className="start-logo"><span className="logo-mark"><Icon name="wave" /></span><h2>mono<span>chord</span></h2></div>
+      <p className="start-description">A musical instrument with two hands.<br />Keys choose the notes. Your mouse gives them life.</p>
+      <div className="start-keys"><div><span>NOTE ROWS</span><strong>Q–P · A–; · Z–/</strong></div><div><span>EXPRESSION</span><strong>Mouse position + motion</strong></div><div><span>PERFORMANCE</span><strong>Chord · latch · loop · morph</strong></div></div>
+      <button className="begin-button" onClick={onBegin}>BEGIN PLAYING <span>↗</span></button>
+      {error && <div className="start-error">{error}</div>}
+      <div className="start-foot">CLICK TO ENABLE AUDIO <span>·</span> HEADPHONES RECOMMENDED</div>
+    </div>
+    <div className="start-aside"><div className="aside-stamp">FIELD<br />NOTES<br /><b>001</b></div><div className="aside-lines"><span>DISCRETE INPUT</span><i /><span>CONTINUOUS EXPRESSION</span><i /><span>ONE SHARED VOICE</span></div></div>
+  </div>;
 }
 
 export function App() {
   const started = useAppState((s) => s.started);
+  const theme = useAppState((s) => s.theme);
   const notice = useAppState((s) => s.sceneNotice);
   const [error, setError] = useState('');
   const keyboardRef = useRef<KeyboardController | null>(null);
@@ -196,7 +239,7 @@ export function App() {
     }
   }
 
-  return <div className="app-shell">
+  return <div className="app-shell" data-theme={theme}>
     <Header />
     <div className="workspace"><ScalePanel choosePreset={choosePreset} /><PerformanceStage /><SettingsPanel /></div>
     <footer className="app-footer"><span>MONOCHORD <i>·</i> LOCAL AUDIO ENGINE</span><span>{notice || 'MOUSE X · FILTER  /  MOUSE Y · EXPRESSION  /  ABSOLUTE ↔ RELATIVE SWITCH'}</span><span>NO CLOUD · NO ACCOUNT · JUST SOUND</span></footer>

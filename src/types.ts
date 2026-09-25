@@ -13,9 +13,18 @@ export type EngineKind = 'subtractive' | 'fm' | 'pluck' | 'granular' | 'additive
 export type MouseMode = 'absolute' | 'relative';
 export type YMapping = 'expression' | 'vibrato' | 'resonance';
 export type LoopStatus = 'idle' | 'recording' | 'playing';
+export const COLOR_THEMES = [
+  { id: 'field', label: 'Field', color: '#c1f18e' },
+  { id: 'ember', label: 'Ember', color: '#ffb86e' },
+  { id: 'tide', label: 'Tide', color: '#79d8e8' },
+  { id: 'orchid', label: 'Orchid', color: '#c5a0ff' },
+] as const;
+export type ColorThemeId = (typeof COLOR_THEMES)[number]['id'];
 
 export interface AppState {
   started: boolean;
+  theme: ColorThemeId;
+  savedScenes: number[];
   scale: ScaleId;
   root: number;
   octave: number;

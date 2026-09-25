@@ -26,10 +26,13 @@ export function Visualizer() {
     const draw = (now: number) => {
       const state = appStore.getState();
       const preset = PRESETS[state.presetIndex] ?? PRESETS[0]!;
+      const themeStyles = getComputedStyle(canvas);
+      const stageBackground = themeStyles.getPropertyValue('--stage-bg').trim() || '#11130f';
+      const accent = themeStyles.getPropertyValue('--accent').trim() || '#c1f18e';
       context.clearRect(0, 0, width, height);
-      context.fillStyle = '#11130f'; context.fillRect(0, 0, width, height);
+      context.fillStyle = stageBackground; context.fillRect(0, 0, width, height);
       const glow = context.createRadialGradient(width * state.mouseX, height * state.mouseY, 0, width * state.mouseX, height * state.mouseY, Math.max(width, height) * 0.68);
-      glow.addColorStop(0, `${preset.color}0b`); glow.addColorStop(1, '#11130f00');
+      glow.addColorStop(0, `${accent}12`); glow.addColorStop(0.55, `${preset.color}08`); glow.addColorStop(1, `${stageBackground}00`);
       context.fillStyle = glow; context.fillRect(0, 0, width, height);
       context.strokeStyle = '#ffffff0a'; context.lineWidth = 1;
       for (let i = 0; i < 6; i++) {
@@ -59,12 +62,13 @@ export function Visualizer() {
         context.textAlign = 'center'; context.fillText(midiToNote(note.midi), x, y + 4);
       }
       const cursorX = width * state.mouseX; const cursorY = height * state.mouseY;
-      context.strokeStyle = `${preset.color}aa`; context.lineWidth = 1;
+      context.strokeStyle = `${accent}aa`; context.lineWidth = 1;
       context.beginPath(); context.arc(cursorX, cursorY, 10 + state.expression * 14, 0, Math.PI * 2); context.stroke();
-      context.beginPath(); context.arc(cursorX, cursorY, 2.5, 0, Math.PI * 2); context.fillStyle = preset.color; context.fill();
+      context.beginPath(); context.arc(cursorX, cursorY, 2.5, 0, Math.PI * 2); context.fillStyle = accent; context.fill();
       if (state.activeNotes.length === 0) {
-        context.textAlign = 'center'; context.fillStyle = '#797d72'; context.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
+        context.textAlign = 'center'; context.fillStyle = accent; context.globalAlpha = 0.56; context.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
         context.fillText('PLAY A NOTE TO BEGIN', width / 2, height / 2 + Math.min(height * 0.28, 176));
+        context.globalAlpha = 1;
       }
       frame = window.requestAnimationFrame(draw);
     };

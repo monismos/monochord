@@ -1,4 +1,4 @@
-import { appStore } from '../store';
+import { appStore, sceneStorageKey } from '../store';
 import { audioEngine } from '../audio/engine';
 import { looper } from '../audio/looper';
 import { SCALE_OPTIONS, type ScaleId, type SceneSnapshot } from '../types';
@@ -11,6 +11,23 @@ putRow(['KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB', 'KeyN', 'KeyM', 'Comma', 'Period
 const KEY_LABELS: Record<string, string> = {};
 for (const code of Object.keys(ROWS)) KEY_LABELS[code] = code.replace(/^Key/, '').toLowerCase();
 KEY_LABELS.Semicolon = ';'; KEY_LABELS.Comma = ','; KEY_LABELS.Period = '.'; KEY_LABELS.Slash = '/';
+
+function isSceneSnapshot(value: unknown): value is SceneSnapshot {
+  if (!value || typeof value !== 'object') return false;
+  const scene = value as Record<string, unknown>;
+  const inRange = (key: string, minimum: number, maximum: number) => typeof scene[key] === 'number' && Number.isFinite(scene[key]) && (scene[key] as number) >= minimum && (scene[key] as number) <= maximum;
+  return SCALE_OPTIONS.some((scale) => scale.id === scene.scale)
+    && inRange('root', 0, 11) && Number.isInteger(scene.root)
+    && inRange('octave', 2, 6) && Number.isInteger(scene.octave)
+    && inRange('presetIndex', 0, 9) && Number.isInteger(scene.presetIndex)
+    && inRange('morph', 0, 1)
+    && (scene.mouseMode === 'absolute' || scene.mouseMode === 'relative')
+    && (scene.yMapping === 'expression' || scene.yMapping === 'vibrato' || scene.yMapping === 'resonance')
+    && inRange('filterHz', 200, 8000) && inRange('expression', 0, 1)
+    && inRange('vibrato', 0, 1) && inRange('resonance', 0, 1)
+    && inRange('reverbSend', 0, 1) && inRange('bpm', 50, 200)
+    && [1, 2, 4, 8].includes(scene.loopBars as number);
+}
 
 type HeldNote = { id: string; midi: number; degree: number; key: string };
 type Callbacks = { onPreset: (index: number) => void; onScene: (slot: number, save: boolean) => void; onScale: (scale: ScaleId) => void };
@@ -37,7 +54,19 @@ export class KeyboardController {
   private noteVelocity = 0.72;
   private lastKeyAt = 0;
 
-  constructor(callbacks: Callbacks) { this.callbacks = callbacks; }
+  constructor(callbacks: Callbacks) {
+    this.callbacks = callbacks;
+    try {
+      const stored: unknown = JSON.parse(window.localStorage.getItem(sceneStorageKey) ?? '{}');
+      if (stored && typeof stored === 'object' && !Array.isArray(stored)) {
+        for (const [slotText, snapshot] of Object.entries(stored)) {
+          const slot = Number(slotText);
+          if (Number.isInteger(slot) && slot >= 1 && slot <= 12 && isSceneSnapshot(snapshot)) this.scenes.set(slot, snapshot);
+        }
+      }
+    } catch { /* Saved scenes are optional when storage is unavailable or malformed. */ }
+    appStore.setState({ savedScenes: [...this.scenes.keys()] });
+  }
 
   attach(): () => void {
     window.addEventListener('keydown', this.keyDown);
@@ -211,8 +240,12 @@ export class KeyboardController {
 
   saveScene(slot: number): void {
     const state = appStore.getState();
+    if (!Number.isInteger(slot) || slot < 1 || slot > 12) return;
     this.scenes.set(slot, { scale: state.scale, root: state.root, octave: state.octave, presetIndex: state.presetIndex, morph: state.morph, mouseMode: state.mouseMode, yMapping: state.yMapping, filterHz: state.filterHz, expression: state.expression, vibrato: state.vibrato, resonance: state.resonance, reverbSend: state.reverbSend, bpm: state.bpm, loopBars: state.loopBars });
-    appStore.setState({ sceneNotice: `Scene ${slot} saved` });
+    let message = `Scene ${slot} saved`;
+    try { window.localStorage.setItem(sceneStorageKey, JSON.stringify(Object.fromEntries(this.scenes))); }
+    catch { message = `Scene ${slot} saved for this session`; }
+    appStore.setState((current) => ({ savedScenes: [...new Set([...current.savedScenes, slot])], sceneNotice: message }));
   }
 
   recallScene(slot: number): void {

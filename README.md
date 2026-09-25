@@ -32,7 +32,9 @@ To make a production bundle, run `npm run build`; `npm run preview` serves that 
 | `F1`–`F12` | Recall a scene |
 | `Shift` + `F1`–`F12` | Save the current performance as a scene |
 
-Numbered preset slots use `1` for slot 1 through `9` for slot 9 and `0` for slot 10. Scene snapshots include scale, root, octave, preset, morph, mouse mode, Y mapping, filter, expression, vibrato, resonance, reverb send, BPM, and loop length. Scenes live in memory for the current app session. Click a scene button to recall; Shift-click it to save.
+Numbered preset slots use `1` for slot 1 through `9` for slot 9 and `0` for slot 10. Scene snapshots include scale, root, octave, preset, morph, mouse mode, Y mapping, filter, expression, vibrato, resonance, reverb send, BPM, and loop length. Scenes are saved in this browser on the current device. Click a scene button to recall; Shift-click it to save.
+
+Use the **Tap** button beside the BPM control to set tempo from a few steady taps. The selected color theme and saved scenes stay on this device between visits.
 
 ## Mouse controls
 
@@ -57,13 +59,14 @@ The pointer is tracked over the full app window. The visualizer reads shared sta
 - Reverb, delay, and light distortion settings are included per preset. A compressor protects the shared output when notes are layered.
 - The looper records one-, two-, four-, or eight-bar passes at the selected BPM. Press **Record Loop** to capture the first take; later passes overdub while playback continues. **Clear Layer** removes the latest pass.
 - Web MIDI is optional. Turn it on in the settings panel to request browser MIDI access and choose an output device. The app sends note on/off and expression, vibrato, and filter CC values.
+- Field, Ember, Tide, and Orchid color themes can be changed on the opening screen or in settings. Theme choice and scene snapshots are stored locally in the browser; loop audio itself remains session-only.
 
 ## Implementation notes
 
 - The app uses React, Vite, strict TypeScript, Tone.js, HTML Canvas, and a small `useSyncExternalStore` state store. Audio, keyboard, mouse, visual, and UI code live in separate modules under `src/`.
 - Tone.js starts only after the start-screen click. The keyboard uses physical `event.code` values so the displayed QWERTY layout is stable on Windows.
 - Scale degrees extend through each scale and wrap at octave boundaries; the upper and lower rows transpose by 12 semitones. In scales shorter than seven notes, the home row can span more than an octave.
-- Loop takes and scenes are kept in memory and are not saved across reloads. The initial version uses equal temperament; a tuning editor and sampler assets are not included.
+- Loop takes remain in memory and are not saved across reloads. The initial version uses equal temperament; a tuning editor and sampler assets are not included.
 - Browser audio latency depends on the device and browser audio settings. Use headphones to avoid acoustic feedback when monitoring through speakers.
 
 ## Future ideas
